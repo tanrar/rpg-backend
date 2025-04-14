@@ -12,7 +12,7 @@ from app.services.state_service import (
 )
 from app.services.llm.factory import LLMAdapterFactory
 from app.config.settings import Settings
-
+from app.services.world_service import WorldService
 # Import our in-memory sessions (this will be replaced with a proper session service later)
 from app.api.sessions import active_sessions
 
@@ -144,36 +144,59 @@ async def perform_exploration_action(
         )
 
         if not llm_response.get("success", False):
-            logger.error(f"LLM error: {llm_response.get('error')}")
-            # Fall back to basic description if LLM fails
-            narrative = action_result.get(
-                "description",
-                f"You {action_type} the {action_data.get('target', 'object')}.",
-            )
-        else:
-            # Parse the LLM response
-            parsed_response = await llm_adapter.parse_json_response(llm_response)
+    # Fall back to basic description if LLM fails
+            narrative = ('You look around the area.')
+            suggested = []
 
+        else:
+            # Try to parse structured data, or use the content directly
+            parsed_response = await llm_adapter.parse_json_response(llm_response)
+            
             if parsed_response.get("success", False):
                 narrative_data = parsed_response.get("data", {})
-                # Update session with LLM-generated data if available
-                if "action" in narrative_data and "data" in narrative_data:
-                    # Process LLM-directed game engine actions here
-                    # This could update the world state, trigger events, etc.
-                    handle_llm_directed_action(session, narrative_data)
-
-                narrative = narrative_data.get(
-                    "narration", llm_response.get("content", "")
-                )
+                
+                # Check if we have a narrativeResponse structure
+                if "action" in narrative_data and narrative_data["action"] == "narrativeResponse":
+                    # Extract from the nested data structure
+                    data_content = narrative_data.get("data", {})
+                    narrative = data_content.get("description", "")
+                    suggested = data_content.get("suggestedActions", [])
+                else:
+                    # Handle other formats
+                    narrative = narrative_data.get("description", llm_response.get("content", ""))
+                    # Check various possible locations for suggested actions
+                    if "suggestedActions" in narrative_data:
+                        suggested = narrative_data.get("suggestedActions", [])
+                    elif "data" in narrative_data and "suggestedActions" in narrative_data["data"]:
+                        suggested = narrative_data["data"].get("suggestedActions", [])
+                    else:
+                        suggested = []
             else:
                 # If JSON parsing fails, use the raw content
                 narrative = llm_response.get("content", "")
+                suggested = []
+                
+            # Convert raw suggested actions to action objects
+            suggested_actions = []
+            for suggestion in suggested:
+                if isinstance(suggestion, str):
+                    action_type = "custom"
+                    if "examine" in suggestion.lower() or "investigate" in suggestion.lower():
+                        action_type = "examine"
+                        target = suggestion.lower().replace("examine", "").replace("investigate", "").strip()
+                    elif "talk" in suggestion.lower() or "approach" in suggestion.lower():
+                        action_type = "talk"
+                        target = suggestion.lower().replace("talk to", "").replace("approach", "").strip()
+                    elif "use" in suggestion.lower() or "interact" in suggestion.lower():
+                        action_type = "interact"
+                        target = suggestion.lower().replace("use", "").replace("interact with", "").strip()
+                        
+                    suggested_actions.append({
+                        "type": action_type,
+                        "description": suggestion,
+                        "target": target if 'target' in locals() else ""
+                    })
 
-        # Save the LLM context for continuity
-        session.llm_context.append({"role": "user", "content": narrative_prompt})
-        session.llm_context.append(
-            {"role": "assistant", "content": llm_response.get("content", "")}
-        )
 
         # Keep context history manageable
         if len(session.llm_context) > 10:
@@ -183,7 +206,7 @@ async def perform_exploration_action(
         available_actions = get_available_actions(session)
 
         # Get suggested actions based on the context
-        suggested_actions = get_suggested_actions(
+        suggested_actions = await get_suggested_actions(
             session=session, action_result=action_result, llm_response=llm_response
         )
 
@@ -230,8 +253,8 @@ async def get_exploration_state(
     if session.world.theme:
         theme = session.world.theme.dict()
     
-    # Get image information
-    image_info = WorldService.get_image_for_location(location_id)
+    # Get image information for the location
+    image_id = WorldService.get_image_for_location(session.world.current_location)
     
     # Get available actions
     available_actions = get_available_actions(session)
@@ -273,18 +296,19 @@ async def get_exploration_state(
             narrative = llm_response.get("content", "")
     
     # Get suggested actions
-    suggested_actions = get_suggested_actions(session=session)
+    suggested_actions = await get_suggested_actions(session=session)
     
     return {
         "success": True,
         "description": narrative,
-        "location": location_description,
+        "location": session.world.get_location_description(session.world.current_location),
         "theme": theme,
-        "image": image_info,
+        "image": image_id,
         "available_actions": available_actions,
         "suggested_actions": suggested_actions,
         "ui_state": StateManager.get_ui_state(session)
     }
+
 
 
 def generate_narrative_prompt(
@@ -547,7 +571,7 @@ def get_available_actions(session: Session) -> Dict[str, Any]:
     }
 
 
-def get_suggested_actions(
+async def get_suggested_actions(
     session: Session,
     action_result: Optional[Dict[str, Any]] = None,
     llm_response: Optional[Dict[str, Any]] = None,
@@ -568,92 +592,95 @@ def get_suggested_actions(
 
     # If we have LLM-suggested actions, use those
     if llm_response and llm_response.get("success", False):
-        parsed = llm_adapter.parse_json_response(llm_response)
-        if parsed.get("success", False):
-            data = parsed.get("data", {})
+        try:
+            parsed = await llm_adapter.parse_json_response(llm_response)
+            if parsed.get("success", False):
+                data = parsed.get("data", {})
 
-            # Extract suggestions from various action types
-            if "data" in data:
-                action_data = data.get("data", {})
+                # Extract suggestions from various action types
+                if "data" in data:
+                    action_data = data.get("data", {})
 
-                if "suggestedActions" in action_data:
-                    # Convert string suggestions to action objects
-                    for suggestion in action_data["suggestedActions"]:
-                        # Try to parse the suggestion into an action
-                        # This is simplified - would need more sophisticated parsing in production
-                        if isinstance(suggestion, str):
-                            if "examine" in suggestion.lower():
-                                target = (
-                                    suggestion.lower().replace("examine", "").strip()
-                                )
-                                suggested.append(
-                                    {
-                                        "type": "examine",
-                                        "target": target,
-                                        "description": suggestion,
-                                    }
-                                )
-                            elif (
-                                "talk" in suggestion.lower()
-                                or "speak" in suggestion.lower()
-                            ):
-                                parts = (
-                                    suggestion.lower()
-                                    .replace("talk to", "")
-                                    .replace("speak with", "")
-                                    .strip()
-                                )
-                                suggested.append(
-                                    {
-                                        "type": "talk",
-                                        "npc": parts,
-                                        "description": suggestion,
-                                    }
-                                )
-                            elif (
-                                "use" in suggestion.lower()
-                                or "interact" in suggestion.lower()
-                            ):
-                                parts = (
-                                    suggestion.lower()
-                                    .replace("use", "")
-                                    .replace("interact with", "")
-                                    .strip()
-                                )
-                                suggested.append(
-                                    {
-                                        "type": "interact",
-                                        "target": parts,
-                                        "interaction": "use",
-                                        "description": suggestion,
-                                    }
-                                )
-                            elif (
-                                "go" in suggestion.lower()
-                                or "move" in suggestion.lower()
-                                or "return" in suggestion.lower()
-                            ):
-                                # This is very simplified - would need better parsing
-                                for exit_info in session.world.locations[
-                                    session.world.current_location
-                                ].exits:
-                                    if (
-                                        exit_info.destination_id.lower()
-                                        in suggestion.lower()
-                                    ):
-                                        suggested.append(
-                                            {
-                                                "type": "move",
-                                                "destination": exit_info.destination_id,
-                                                "description": suggestion,
-                                            }
-                                        )
-                                        break
-                            else:
-                                # Generic suggestion
-                                suggested.append(
-                                    {"type": "custom", "description": suggestion}
-                                )
+                    if "suggestedActions" in action_data:
+                        # Convert string suggestions to action objects
+                        for suggestion in action_data["suggestedActions"]:
+                            # Try to parse the suggestion into an action
+                            # This is simplified - would need more sophisticated parsing in production
+                            if isinstance(suggestion, str):
+                                if "examine" in suggestion.lower():
+                                    target = (
+                                        suggestion.lower().replace("examine", "").strip()
+                                    )
+                                    suggested.append(
+                                        {
+                                            "type": "examine",
+                                            "target": target,
+                                            "description": suggestion,
+                                        }
+                                    )
+                                elif (
+                                    "talk" in suggestion.lower()
+                                    or "speak" in suggestion.lower()
+                                ):
+                                    parts = (
+                                        suggestion.lower()
+                                        .replace("talk to", "")
+                                        .replace("speak with", "")
+                                        .strip()
+                                    )
+                                    suggested.append(
+                                        {
+                                            "type": "talk",
+                                            "npc": parts,
+                                            "description": suggestion,
+                                        }
+                                    )
+                                elif (
+                                    "use" in suggestion.lower()
+                                    or "interact" in suggestion.lower()
+                                ):
+                                    parts = (
+                                        suggestion.lower()
+                                        .replace("use", "")
+                                        .replace("interact with", "")
+                                        .strip()
+                                    )
+                                    suggested.append(
+                                        {
+                                            "type": "interact",
+                                            "target": parts,
+                                            "interaction": "use",
+                                            "description": suggestion,
+                                        }
+                                    )
+                                elif (
+                                    "go" in suggestion.lower()
+                                    or "move" in suggestion.lower()
+                                    or "return" in suggestion.lower()
+                                ):
+                                    # This is very simplified - would need better parsing
+                                    for exit_info in session.world.locations[
+                                        session.world.current_location
+                                    ].exits:
+                                        if (
+                                            exit_info.destination_id.lower()
+                                            in suggestion.lower()
+                                        ):
+                                            suggested.append(
+                                                {
+                                                    "type": "move",
+                                                    "destination": exit_info.destination_id,
+                                                    "description": suggestion,
+                                                }
+                                            )
+                                            break
+                                else:
+                                    # Generic suggestion
+                                    suggested.append(
+                                        {"type": "custom", "description": suggestion}
+                                    )
+        except Exception as e:
+            logging.error(f"Error parsing LLM response: {str(e)}")
 
     # If we don't have enough suggestions, add some defaults
     if len(suggested) < 3:

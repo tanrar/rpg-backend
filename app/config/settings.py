@@ -15,9 +15,9 @@ class Settings(BaseSettings):
     cors_origins: List[str] = ["http://localhost:3000"]  # Frontend URL
 
     # LLM settings
-    llm_provider: str = "mock"  # "anthropic", "mock"
+    llm_provider: str = "anthropic"  # "anthropic", "mock"
     anthropic_api_key: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
-    anthropic_model: str = "claude-3-opus-20240229"
+    anthropic_model: str = "claude-3-5-haiku-20241022"
 
     # Storage settings
     storage_type: str = "memory"  # "memory", "file", "database"

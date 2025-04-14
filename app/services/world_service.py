@@ -93,27 +93,21 @@ class WorldService:
         )
     
     @staticmethod
-    def get_image_for_location(location_id: str) -> Optional[Dict[str, str]]:
+    def get_image_for_location(location_id: str) -> Optional[str]:
         """
-        Get image information for a location.
+        Get image path for a location.
         
         Args:
             location_id: The ID of the location
             
         Returns:
-            Optional[Dict]: Image information or None if not available
+            Optional[str]: Image path or None if not available
         """
-        if location_id in LOCATIONS:
-            loc_data = LOCATIONS[location_id]
-            
-            if "image" in loc_data:
-                return {
-                    "id": loc_data["image"],
-                    "prompt": loc_data.get("image_prompt", f"A scene of {loc_data['name']}")
-                }
+        if location_id in LOCATIONS and "image" in LOCATIONS[location_id]:
+            # Just return the image ID which will be used to construct the path
+            return LOCATIONS[location_id]["image"]
         
-        return None
-    
+        return None    
     @staticmethod
     def get_theme_for_location(location_id: str) -> Optional[ThemeSettings]:
         """
