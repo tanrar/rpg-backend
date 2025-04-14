@@ -205,27 +205,37 @@ async def perform_exploration_action(
         return {"success": False, "error": f"Server error: {str(e)}"}
 
 
+# app/api/exploration.py (update exploration_state endpoint)
 @router.get("/", response_model=Dict[str, Any])
-async def get_exploration_state(session_id: str = Path(..., description="Session ID")):
+async def get_exploration_state(
+    session_id: str = Path(..., description="Session ID")
+):
     """
     Get the current exploration state for a session.
-
+    
     Args:
         session_id: The session ID
-
+        
     Returns:
         Dict: Current location, available actions, and UI state
     """
     session = await get_session(session_id)
-
+    
     # Get location description
-    location_description = session.world.get_location_description(
-        session.world.current_location
-    )
-
+    location_description = session.world.get_location_description(session.world.current_location)
+    
+    # Get location theme
+    location_id = session.world.current_location
+    theme = None
+    if session.world.theme:
+        theme = session.world.theme.dict()
+    
+    # Get image information
+    image_info = WorldService.get_image_for_location(location_id)
+    
     # Get available actions
     available_actions = get_available_actions(session)
-
+    
     # Generate a narrative description for the current location
     location_prompt = f"""
     Describe the current location: {location_description.get('name')}
@@ -243,37 +253,37 @@ async def get_exploration_state(session_id: str = Path(..., description="Session
     
     First visit: {not location_description.get('visited_before', False)}
     """
-
+    
     llm_response = await llm_adapter.generate_response(
         prompt=location_prompt,
-        context=session.llm_context[-5:] if session.llm_context else None,
+        context=session.llm_context[-5:] if session.llm_context else None
     )
-
+    
     if not llm_response.get("success", False):
         # Fall back to basic description if LLM fails
-        narrative = location_description.get("description", "You look around the area.")
+        narrative = location_description.get('description', 'You look around the area.')
     else:
         # Try to parse structured data, or use the content directly
         parsed_response = await llm_adapter.parse_json_response(llm_response)
-
+        
         if parsed_response.get("success", False):
             narrative_data = parsed_response.get("data", {})
-            narrative = narrative_data.get(
-                "description", llm_response.get("content", "")
-            )
+            narrative = narrative_data.get("description", llm_response.get("content", ""))
         else:
             narrative = llm_response.get("content", "")
-
+    
     # Get suggested actions
     suggested_actions = get_suggested_actions(session=session)
-
+    
     return {
         "success": True,
         "description": narrative,
         "location": location_description,
+        "theme": theme,
+        "image": image_info,
         "available_actions": available_actions,
         "suggested_actions": suggested_actions,
-        "ui_state": StateManager.get_ui_state(session),
+        "ui_state": StateManager.get_ui_state(session)
     }
 
 

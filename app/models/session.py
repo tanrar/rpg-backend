@@ -1,94 +1,86 @@
-# app/api/sessions.py (update)
-from fastapi import APIRouter, HTTPException, Depends, status
-from typing import List, Dict, Any
-import uuid
+# app/models/session.py
+from pydantic import BaseModel, Field
+from typing import List, Dict, Optional
+from datetime import datetime
+from uuid import UUID, uuid4
 
-from app.models.session import Session
 from app.models.character import Character
-from app.models.inventory import Inventory, Item
+from app.models.inventory import Inventory
 from app.models.world import WorldState
 from app.models.game_state import GameState
-from app.services.world_service import WorldService
 
-router = APIRouter()
 
-# Temporary in-memory storage for sessions
-# This will be replaced with a proper storage service later
-active_sessions = {}
+class SceneRecord(BaseModel):
+    """Model representing a record of scene interaction."""
 
-@router.post("/", status_code=status.HTTP_201_CREATED, response_model=Dict[str, Any])
-async def create_session(character_data: Dict[str, Any]):
-    """Create a new game session."""
-    try:
-        # Create a character from the provided data
-        character = Character(
-            name=character_data.get("name", "Adventurer"),
-            class_type=character_data.get("class_type", "Courier"),
-            origin=character_data.get("origin", "Wasteland-Born"),
-            health=50,  # Default values
-            max_health=50,
-            mana=30,
-            max_mana=30,
-            skills={
-                "perception": 3,
-                "technology": 2,
-                "strength": 1,
-                "charisma": 2
+    timestamp: datetime = Field(default_factory=datetime.now)
+    scene_type: str
+    description: str
+    player_action: Optional[str] = None
+    outcome: Optional[str] = None
+
+
+class Session(BaseModel):
+    """Model representing a game session."""
+
+    id: UUID = Field(default_factory=uuid4)
+    created_at: datetime = Field(default_factory=datetime.now)
+    last_active: datetime = Field(default_factory=datetime.now)
+    character: Character
+    inventory: Inventory
+    world: WorldState
+    current_state: GameState = GameState.EXPLORATION
+    scene_history: List[SceneRecord] = []
+    llm_context: List[Dict] = []
+
+    def update_last_active(self):
+        """Update the last active timestamp."""
+        self.last_active = datetime.now()
+
+    def add_scene_record(
+        self,
+        scene_type: str,
+        description: str,
+        player_action: Optional[str] = None,
+        outcome: Optional[str] = None,
+    ):
+        """Add a new scene record to the history."""
+        record = SceneRecord(
+            scene_type=scene_type,
+            description=description,
+            player_action=player_action,
+            outcome=outcome,
+        )
+        self.scene_history.append(record)
+
+    def get_recent_history(self, limit: int = 5) -> List[Dict]:
+        """Get recent scene history for LLM context."""
+        return [
+            {
+                "timestamp": record.timestamp.isoformat(),
+                "scene_type": record.scene_type,
+                "description": record.description,
+                "player_action": record.player_action,
+                "outcome": record.outcome,
             }
-        )
-        
-        # Create a basic inventory
-        inventory = Inventory(
-            items=[
-                Item(
-                    id="medkit",
-                    name="Medkit",
-                    description="A basic medical kit for treating wounds.",
-                    item_type="consumable",
-                    effects=[
-                        {
-                            "type": "healing",
-                            "target": "self",
-                            "value": 20
-                        }
-                    ]
-                )
-            ],
-            currency=10
-        )
-        
-        # Create world state using our world service
-        world_state = WorldService.initialize_world_state("starting_camp")
-        
-        # Create the session
-        session = Session(
-            character=character,
-            inventory=inventory,
-            world=world_state,
-            current_state=GameState.EXPLORATION
-        )
-        
-        # Add initial scene record
-        session.add_scene_record(
-            scene_type="exploration",
-            description="You find yourself at a small survivors' camp. The harsh wasteland stretches in all directions, with only a faint path leading east toward what might be civilization."
-        )
-        
-        # Store the session
-        session_id = str(session.id)
-        active_sessions[session_id] = session
-        
-        return {
-            "session_id": session_id,
-            "message": "Session created successfully",
-            "character": character.dict(),
-            "current_location": world_state.current_location,
-            "current_state": GameState.EXPLORATION.name,
-            "theme": world_state.theme.dict() if world_state.theme else None
+            for record in self.scene_history[-limit:]
+        ]
+
+    def prepare_llm_context(self, additional_context: Optional[Dict] = None) -> Dict:
+        """Prepare context for LLM based on current session state."""
+        context = {
+            "character": self.character.get_summary(),
+            "inventory": self.inventory.get_summary(),
+            "location": (
+                self.world.get_location_description(self.world.current_location)
+                if self.world.current_location
+                else None
+            ),
+            "recent_history": self.get_recent_history(),
+            "current_state": self.current_state.name,
         }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create session: {str(e)}"
-        )
+
+        if additional_context:
+            context.update(additional_context)
+
+        return context
