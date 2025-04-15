@@ -1,0 +1,9 @@
+{
+    "id": "oakhaven_square",
+    "name": "Oakhaven Town Square",
+    "description": "The modest town square features a weathered stone well in the center. Cobblestone paths lead towards a tavern, a general store, the guard barracks, and south back to the town gate.",
+    "adjacentIds": ["oakhaven_gate", "sleepy_dragon_tavern", "oakhaven_general_store", "oakhaven_barracks"],
+    "tags": ["town", "square", "exterior", "hub"],
+    "imageId": "town_square_day.png",
+    "themeId": "oakhaven_day"
+  }

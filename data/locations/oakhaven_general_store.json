@@ -1,0 +1,9 @@
+{
+    "id": "oakhaven_general_store",
+    "name": "Oakhaven General Store",
+    "description": "Shelves packed with goods line the walls of this cluttered store. Sacks of grain sit near barrels of pickles, and tools hang from the rafters. The shopkeeper eyes you from behind the counter. The door leads out to the town square.",
+    "adjacentIds": ["oakhaven_square"],
+    "tags": ["town", "store", "interior"],
+    "imageId": "general_store_interior.png",
+    "themeId": "store_cluttered"
+  }

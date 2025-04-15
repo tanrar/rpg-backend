@@ -1,0 +1,9 @@
+{
+    "id": "oakhaven_gate",
+    "name": "Oakhaven Town Gate",
+    "description": "A sturdy wooden gate marks the entrance to the small town of Oakhaven. A bored-looking guard leans against the wall. The road leads north into the town square.",
+    "adjacentIds": ["oakhaven_square"],
+    "tags": ["town", "gate", "exterior"],
+    "imageId": "town_gate_day.png",
+    "themeId": "oakhaven_day"
+  }

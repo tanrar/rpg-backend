@@ -1,0 +1,9 @@
+{
+    "id": "oakhaven_barracks",
+    "name": "Oakhaven Guard Barracks",
+    "description": "The barracks smell of oil and polished leather. Weapon racks line one wall, and simple bunks fill the rest of the space. A stern-faced captain sits at a desk, reviewing papers. The exit leads to the town square.",
+    "adjacentIds": ["oakhaven_square"],
+    "tags": ["town", "barracks", "interior", "guard"],
+    "imageId": "barracks_interior.png",
+    "themeId": "barracks_stern"
+  }

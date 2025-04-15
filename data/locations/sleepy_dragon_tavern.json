@@ -1,0 +1,9 @@
+{
+    "id": "sleepy_dragon_tavern",
+    "name": "The Sleepy Dragon Tavern",
+    "description": "Warm light spills from the windows of the Sleepy Dragon. Inside, the air is thick with the smell of stew and pipe smoke. A few patrons nurse drinks at worn wooden tables. The exit leads back to the town square.",
+    "adjacentIds": ["oakhaven_square"],
+    "tags": ["town", "tavern", "interior"],
+    "imageId": "tavern_interior_cozy.png",
+    "themeId": "tavern_cozy"
+  }
