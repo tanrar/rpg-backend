@@ -15,9 +15,11 @@ class Settings(BaseSettings):
     cors_origins: List[str] = ["http://localhost:3000"]  # Frontend URL
 
     # LLM settings
-    llm_provider: str = "anthropic"  # "anthropic", "mock"
+    llm_provider: str = "gemini"  # "anthropic", "mock"
     anthropic_api_key: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     anthropic_model: str = "claude-3-5-haiku-20241022"
+    gemini_api_key: Optional[str] = os.getenv("GEMINI_API_KEY")
+    gemini_model: str = "gemini-2.0-flash-lite"
 
     # Storage settings
     storage_type: str = "memory"  # "memory", "file", "database"

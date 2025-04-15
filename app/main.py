@@ -3,7 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
-from app.api import sessions, exploration
+from app.api import sessions
+from app.api.exploration import router as exploration_router
 from app.config.settings import Settings
 from app.services.state_factory import StateServiceFactory
 
@@ -40,11 +41,8 @@ def create_application() -> FastAPI:
     application.include_router(
         sessions.router, prefix="/api/sessions", tags=["Sessions"]
     )
-    application.include_router(
-        exploration.router,
-        prefix="/api/sessions/{session_id}/exploration",
-        tags=["Exploration"],
-    )
+    application.include_router(exploration_router, prefix="/api/sessions/{session_id}/exploration", tags=["Exploration"])
+
 
     # Add startup event
     @application.on_event("startup")
