@@ -6,6 +6,7 @@ import (
 	"llmrpg/internal/llm"     // Adapter interface and data structures
 	"llmrpg/internal/session" // Session manager and data structure
 	"llmrpg/internal/world"   // World system interface
+
 	// "llmrpg/character" // Character struct (used via session)
 	"time"
 )
@@ -52,14 +53,12 @@ func (ne *NarrativeEngine) ProcessPlayerInput(ctx context.Context, sessionID str
 	// Log player input to session history
 	currentSession.AddRecentAction(fmt.Sprintf("Player: %s", playerInput))
 
-
 	// 2. Build prompt context from session and world state
 	promptData, err := ne.buildPromptContext(currentSession)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build prompt context for session '%s': %w", sessionID, err)
 	}
 	promptData.PlayerInput = playerInput // Add the current input
-
 
 	// 3. Call LLM Adapter
 	fmt.Printf("NarrativeEngine: Calling LLM adapter for session %s...\n", sessionID)
@@ -69,9 +68,8 @@ func (ne *NarrativeEngine) ProcessPlayerInput(ctx context.Context, sessionID str
 		// TODO: Consider fallback logic? Generate a default "confused" response?
 		return nil, fmt.Errorf("LLM adapter failed for session '%s': %w", sessionID, err)
 	}
-    // Log LLM narrative to session history? Be mindful of length.
-    // currentSession.AddRecentAction(fmt.Sprintf("Narrator: %s", llmResponse.Narrative))
-
+	// Log LLM narrative to session history? Be mindful of length.
+	// currentSession.AddRecentAction(fmt.Sprintf("Narrator: %s", llmResponse.Narrative))
 
 	// 4. Execute Actions returned by LLM
 	finalResponse := llmResponse // Start with the direct LLM response
@@ -93,8 +91,8 @@ func (ne *NarrativeEngine) ProcessPlayerInput(ctx context.Context, sessionID str
 			fmt.Printf("NarrativeEngine: Errors occurred during action execution for session %s: %v\n", sessionID, executionErrors)
 			// We might return the errors as part of a more complex response object later.
 		} else {
-            fmt.Printf("NarrativeEngine: All %d action(s) executed successfully for session %s.\n", len(llmResponse.Actions), sessionID)
-        }
+			fmt.Printf("NarrativeEngine: All %d action(s) executed successfully for session %s.\n", len(llmResponse.Actions), sessionID)
+		}
 	}
 
 	// 5. Update session (e.g., LastActive time - already done by GetSession, but explicit save might go here later)
@@ -135,19 +133,21 @@ func (ne *NarrativeEngine) buildPromptContext(currentSession *session.GameSessio
 	}
 
 	adjLocIDs := make([]string, 0, len(adjacentLocNodes))
-    adjLocNames := make([]string, 0, len(adjacentLocNodes))
+	adjLocNames := make([]string, 0, len(adjacentLocNodes))
 	for _, node := range adjacentLocNodes {
-        if node != nil { // Safety check
-		    adjLocIDs = append(adjLocIDs, node.ID)
-            adjLocNames = append(adjLocNames, node.Name) // Send names for LLM convenience
-        }
+		if node != nil { // Safety check
+			adjLocIDs = append(adjLocIDs, node.ID)
+			// Important change here: Use ID for name to ensure consistency
+			// Format: "location_id (Human Readable Name)"
+			adjLocNames = append(adjLocNames, fmt.Sprintf("%s (%s)", node.ID, node.Name))
+		}
 	}
 
 	locCtx := llm.LocationContextData{
-		CurrentLocationName:   currentLoc.Name,
+		CurrentLocationName:   fmt.Sprintf("%s (%s)", currentLoc.ID, currentLoc.Name), // Include ID in name
 		CurrentLocationDesc:   currentLoc.Description,
 		AdjacentLocationIDs:   adjLocIDs,
-        AdjacentLocationNames: adjLocNames,
+		AdjacentLocationNames: adjLocNames,
 		CurrentThemeID:        currentLoc.ThemeID,
 	}
 

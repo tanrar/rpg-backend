@@ -120,20 +120,22 @@ func main() {
 
 	// Initialize Narrative Engine
 	// Load system prompt from file or use default
-	systemPrompt := `You are the narrator for a dark, atmospheric text adventure game set in a post-apocalyptic sci-fi world.
-Focus on vivid descriptions of decaying environments, strange technologies, and unsettling encounters.
-Keep your narrative concise but evocative. Respond directly to the player's input.
-If the player's action implies moving to an adjacent, valid location, include a specific action JSON in your response.
-Example format for actions: {"actions": [{"type": "updateLocation", "data": {"locationId": "target_location_id"}}]}`
+	defaultPromptPath := "data/prompts/system_prompt.txt" // Default system prompt path
 	systemPromptPath := os.Getenv("SYSTEM_PROMPT_PATH")
-	if systemPromptPath != "" {
-		promptBytes, err := os.ReadFile(systemPromptPath)
-		if err != nil {
-			log.Printf("Warning: Failed to read system prompt from %s: %v. Using default.", systemPromptPath, err)
-		} else {
-			systemPrompt = string(promptBytes)
-			fmt.Printf("Loaded system prompt from %s.\n", systemPromptPath)
-		}
+	if systemPromptPath == "" {
+		systemPromptPath = defaultPromptPath
+		fmt.Printf("Using default prompt path: %s\n", defaultPromptPath)
+	}
+
+	var systemPrompt string
+	promptBytes, err := os.ReadFile(systemPromptPath)
+	if err != nil {
+		// Truly minimal fallback prompt as last resort
+		systemPrompt = `You are the narrator for a text adventure game. Describe the world vividly and respond to player actions.`
+		log.Printf("Warning: Failed to read system prompt from %s: %v. Using minimal fallback.", systemPromptPath, err)
+	} else {
+		systemPrompt = string(promptBytes)
+		fmt.Printf("Loaded system prompt from %s (%d bytes)\n", systemPromptPath, len(promptBytes))
 	}
 	narrativeEngine, err = narrative.NewNarrativeEngine(worldSystem, llmAdapter, actionExecutor, sessionManager, systemPrompt)
 	if err != nil {
@@ -369,7 +371,7 @@ func handleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 // handleHealthCheck provides a simple endpoint to check server status.
 func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -379,7 +381,5 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-
 // --- Ensure necessary standard library imports ---
 // Included at the top
-

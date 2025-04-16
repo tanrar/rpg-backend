@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 	"time" // Added for http client timeout
-
 	// We don't strictly need world/character imports here,
 	// as PromptData uses simplified structures.
 )
@@ -53,19 +52,17 @@ type SessionContextData struct {
 }
 
 type PromptData struct {
-	PlayerContext PlayerContextData  `json:"playerContext"`
+	PlayerContext   PlayerContextData   `json:"playerContext"`
 	LocationContext LocationContextData `json:"locationContext"`
 	SessionContext  SessionContextData  `json:"sessionContext,omitempty"`
-	PlayerInput     string           `json:"playerInput"`
+	PlayerInput     string              `json:"playerInput"`
 }
-
 
 // --- LLM Adapter Interface ---
 
 type Adapter interface {
 	GenerateResponse(ctx context.Context, systemPrompt string, promptData PromptData) (*LLMResponse, error)
 }
-
 
 // --- Gemini Adapter Implementation (HTTP with JSON Mode) ---
 
@@ -88,7 +85,6 @@ func NewGeminiAdapter(modelName string) *GeminiAdapter {
 	}
 }
 
-
 // --- Internal Structs for Gemini API Request/Response ---
 
 type geminiPart struct {
@@ -106,21 +102,21 @@ type geminiSafetySetting struct {
 }
 
 type geminiGenerationConfig struct {
-	Temperature      *float32 `json:"temperature,omitempty"`
-	TopP             *float32 `json:"topP,omitempty"`
-	TopK             *int     `json:"topK,omitempty"`
-	MaxOutputTokens  *int     `json:"maxOutputTokens,omitempty"`
-	StopSequences    []string `json:"stopSequences,omitempty"`
+	Temperature     *float32 `json:"temperature,omitempty"`
+	TopP            *float32 `json:"topP,omitempty"`
+	TopK            *int     `json:"topK,omitempty"`
+	MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
+	StopSequences   []string `json:"stopSequences,omitempty"`
 	// *** Add responseMimeType for JSON Mode ***
-	ResponseMimeType string   `json:"responseMimeType,omitempty"`
-    // Optional: Define responseSchema for stricter control later
-    // ResponseSchema *geminiResponseSchema `json:"responseSchema,omitempty"`
+	ResponseMimeType string `json:"responseMimeType,omitempty"`
+	// Optional: Define responseSchema for stricter control later
+	// ResponseSchema *geminiResponseSchema `json:"responseSchema,omitempty"`
 }
 
 // geminiRequest is the structure sent to the Gemini API generateContent endpoint
 type geminiRequest struct {
-	Contents         []geminiContent          `json:"contents"`
-	SafetySettings   []geminiSafetySetting  `json:"safetySettings,omitempty"`
+	Contents         []geminiContent         `json:"contents"`
+	SafetySettings   []geminiSafetySetting   `json:"safetySettings,omitempty"`
 	GenerationConfig *geminiGenerationConfig `json:"generationConfig,omitempty"`
 }
 
@@ -164,9 +160,8 @@ type expectedLLMJsonOutput struct {
 	Narrative   string      `json:"narrative"`             // Field for the story text
 	Suggestions []string    `json:"suggestions,omitempty"` // Field for suggested actions
 	Actions     []LLMAction `json:"actions,omitempty"`     // Field for game actions
-    // Add any other fields the LLM might generate
+	// Add any other fields the LLM might generate
 }
-
 
 // GenerateResponse makes a call to the Gemini API using standard HTTP, requesting JSON output.
 func (g *GeminiAdapter) GenerateResponse(ctx context.Context, systemPrompt string, promptData PromptData) (*LLMResponse, error) {
@@ -191,9 +186,17 @@ func (g *GeminiAdapter) GenerateResponse(ctx context.Context, systemPrompt strin
 	}
 	// Add context (as before)
 	fullPromptBuilder.WriteString(fmt.Sprintf("Current Location: %s (%s)\n", promptData.LocationContext.CurrentLocationName, promptData.LocationContext.CurrentLocationDesc))
-    if len(promptData.LocationContext.AdjacentLocationNames) > 0 { fullPromptBuilder.WriteString(fmt.Sprintf("Nearby: %s\n", strings.Join(promptData.LocationContext.AdjacentLocationNames, ", "))) }
-    if len(promptData.SessionContext.RecentActions) > 0 { fullPromptBuilder.WriteString(fmt.Sprintf("Recent Events: %s\n", strings.Join(promptData.SessionContext.RecentActions, "; "))) }
+	if len(promptData.LocationContext.AdjacentLocationNames) > 0 {
+		fullPromptBuilder.WriteString(fmt.Sprintf("Nearby: %s\n", strings.Join(promptData.LocationContext.AdjacentLocationNames, ", ")))
+	}
+	if len(promptData.SessionContext.RecentActions) > 0 {
+		fullPromptBuilder.WriteString(fmt.Sprintf("Recent Events: %s\n", strings.Join(promptData.SessionContext.RecentActions, "; ")))
+	}
 	fullPromptBuilder.WriteString(fmt.Sprintf("\nPlayer (%s - %s): %s", promptData.PlayerContext.Name, promptData.PlayerContext.Class, promptData.PlayerInput))
+
+	// --- Log the final prompt ---
+	finalPrompt := fullPromptBuilder.String()
+	fmt.Printf("--- Final Prompt Sent to Gemini ---\n%s\n---------------------------------\n", finalPrompt)
 
 	// --- Construct Request Body ---
 	apiRequest := geminiRequest{
@@ -201,49 +204,65 @@ func (g *GeminiAdapter) GenerateResponse(ctx context.Context, systemPrompt strin
 			{
 				Role: "user",
 				Parts: []geminiPart{
-					{Text: fullPromptBuilder.String()},
+					{Text: finalPrompt}, // Use the logged prompt string
 				},
 			},
 		},
 		// *** Configure JSON Mode ***
 		GenerationConfig: &geminiGenerationConfig{
 			ResponseMimeType: "application/json",
-            // Optional: Add other generation parameters
-            // Temperature: float32Ptr(0.8),
-            // MaxOutputTokens: intPtr(2048),
+			// Optional: Add other generation parameters
+			// Temperature: float32Ptr(0.8),
+			// MaxOutputTokens: intPtr(2048),
 		},
-        // Optional: Add Safety Settings if needed
-        // SafetySettings: []geminiSafetySetting{
-        //     {Category: "HARM_CATEGORY_HARASSMENT", Threshold: "BLOCK_MEDIUM_AND_ABOVE"},
-        //     // ... other categories
-        // },
+		// Optional: Add Safety Settings if needed
+		// SafetySettings: []geminiSafetySetting{
+		//     {Category: "HARM_CATEGORY_HARASSMENT", Threshold: "BLOCK_MEDIUM_AND_ABOVE"},
+		//     // ... other categories
+		// },
 	}
 
 	// --- Marshal Request Body ---
 	reqBodyBytes, err := json.Marshal(apiRequest)
-	if err != nil { return nil, fmt.Errorf("failed to marshal request body: %w", err) }
-    // fmt.Printf("Request Body JSON:\n%s\n", string(reqBodyBytes)) // Debug logging
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+	// fmt.Printf("Request Body JSON:\n%s\n", string(reqBodyBytes)) // Debug logging
 
 	// --- Prepare HTTP Request ---
 	url := fmt.Sprintf("%s/%s:generateContent?key=%s", g.apiEndpoint, g.modelName, apiKey)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(reqBodyBytes))
-	if err != nil { return nil, fmt.Errorf("failed to create HTTP request: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	// --- Execute HTTP Request ---
 	fmt.Printf("Sending request to Gemini API (JSON Mode): %s...\n", url)
 	httpResp, err := g.httpClient.Do(httpReq)
-	if err != nil { return nil, fmt.Errorf("failed to execute HTTP request: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute HTTP request: %w", err)
+	}
 	defer httpResp.Body.Close()
 
 	// --- Read Response Body ---
 	respBodyBytes, err := io.ReadAll(httpResp.Body)
-	if err != nil { return nil, fmt.Errorf("failed to read response body: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
 
 	// --- Handle Non-200 Status Codes ---
 	if httpResp.StatusCode != http.StatusOK { /* ... (error handling as before) ... */
-		 var apiError struct { Error struct { Code int `json:"code"`; Message string `json:"message"`; Status string `json:"status"` } `json:"error"` }
-        if json.Unmarshal(respBodyBytes, &apiError) == nil && apiError.Error.Message != "" { return nil, fmt.Errorf("gemini API request failed: status %d, code %d, message: %s", httpResp.StatusCode, apiError.Error.Code, apiError.Error.Message) }
+		var apiError struct {
+			Error struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+				Status  string `json:"status"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(respBodyBytes, &apiError) == nil && apiError.Error.Message != "" {
+			return nil, fmt.Errorf("gemini API request failed: status %d, code %d, message: %s", httpResp.StatusCode, apiError.Error.Code, apiError.Error.Message)
+		}
 		return nil, fmt.Errorf("gemini API request failed: status %s, body: %s", httpResp.Status, string(respBodyBytes))
 	}
 
@@ -253,33 +272,33 @@ func (g *GeminiAdapter) GenerateResponse(ctx context.Context, systemPrompt strin
 		fmt.Printf("Raw Response Body on Unmarshal Error:\n%s\n", string(respBodyBytes))
 		return nil, fmt.Errorf("failed to unmarshal Gemini API response wrapper: %w", err)
 	}
-    // fmt.Printf("Parsed API Response Wrapper: %+v\n", apiResponse) // Debug logging
+	// fmt.Printf("Parsed API Response Wrapper: %+v\n", apiResponse) // Debug logging
 
-    // --- Check for Prompt Blocks ---
-    if apiResponse.PromptFeedback != nil && apiResponse.PromptFeedback.BlockReason != "" { /* ... (error handling as before) ... */
-		 return nil, fmt.Errorf("prompt blocked by API: %s (Safety Ratings: %+v)", apiResponse.PromptFeedback.BlockReason, apiResponse.PromptFeedback.SafetyRatings)
+	// --- Check for Prompt Blocks ---
+	if apiResponse.PromptFeedback != nil && apiResponse.PromptFeedback.BlockReason != "" { /* ... (error handling as before) ... */
+		return nil, fmt.Errorf("prompt blocked by API: %s (Safety Ratings: %+v)", apiResponse.PromptFeedback.BlockReason, apiResponse.PromptFeedback.SafetyRatings)
 	}
 
 	// --- Extract and Parse the JSON Content from the Candidate ---
 	if len(apiResponse.Candidates) == 0 || len(apiResponse.Candidates[0].Content.Parts) == 0 {
 		// Handle cases where content generation might have been blocked or response is empty
-        if len(apiResponse.Candidates) > 0 && apiResponse.Candidates[0].FinishReason == "SAFETY" {
-             return nil, fmt.Errorf("content generation stopped due to safety settings: %+v", apiResponse.Candidates[0].SafetyRatings)
-        }
+		if len(apiResponse.Candidates) > 0 && apiResponse.Candidates[0].FinishReason == "SAFETY" {
+			return nil, fmt.Errorf("content generation stopped due to safety settings: %+v", apiResponse.Candidates[0].SafetyRatings)
+		}
 		return nil, fmt.Errorf("gemini response missing expected content")
 	}
 
 	// The actual JSON output from the LLM is inside the text part
 	llmOutputJsonString := apiResponse.Candidates[0].Content.Parts[0].Text
-    // fmt.Printf("LLM Output JSON String:\n%s\n", llmOutputJsonString) // Debug logging
+	// fmt.Printf("LLM Output JSON String:\n%s\n", llmOutputJsonString) // Debug logging
 
-    // Unmarshal the JSON string generated by the LLM into our expected structure
-    var parsedOutput expectedLLMJsonOutput
-    if err := json.Unmarshal([]byte(llmOutputJsonString), &parsedOutput); err != nil {
-        // Fallback: Return the raw string as narrative if parsing fails? Or return error?
-        // Let's return an error for now, as structured output was expected.
-        return nil, fmt.Errorf("failed to parse LLM's JSON output: %w. Raw output: %s", err, llmOutputJsonString)
-    }
+	// Unmarshal the JSON string generated by the LLM into our expected structure
+	var parsedOutput expectedLLMJsonOutput
+	if err := json.Unmarshal([]byte(llmOutputJsonString), &parsedOutput); err != nil {
+		// Fallback: Return the raw string as narrative if parsing fails? Or return error?
+		// Let's return an error for now, as structured output was expected.
+		return nil, fmt.Errorf("failed to parse LLM's JSON output: %w. Raw output: %s", err, llmOutputJsonString)
+	}
 
 	// --- Map Parsed Output to internal LLMResponse ---
 	llmResponse := &LLMResponse{
@@ -288,8 +307,8 @@ func (g *GeminiAdapter) GenerateResponse(ctx context.Context, systemPrompt strin
 		Actions:     parsedOutput.Actions,     // Use the parsed actions
 	}
 
-    // Log token usage if available
-    if apiResponse.UsageMetadata != nil { /* ... (logging as before) ... */
+	// Log token usage if available
+	if apiResponse.UsageMetadata != nil { /* ... (logging as before) ... */
 		fmt.Printf("Gemini API Token Usage: Prompt=%d, Candidates=%d, Total=%d\n", apiResponse.UsageMetadata.PromptTokenCount, apiResponse.UsageMetadata.CandidatesTokenCount, apiResponse.UsageMetadata.TotalTokenCount)
 	}
 
@@ -300,4 +319,3 @@ func (g *GeminiAdapter) GenerateResponse(ctx context.Context, systemPrompt strin
 // --- Helper functions (optional pointer literals) ---
 // func float32Ptr(v float32) *float32 { return &v }
 // func intPtr(v int) *int             { return &v }
-
